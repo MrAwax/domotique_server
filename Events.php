@@ -1,6 +1,6 @@
 <?php
 
-require_once('../../../webprivate/home/homeconfiguration.php');
+require_once('Config.php');
 
 use PDO;
 

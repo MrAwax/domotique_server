@@ -1,10 +1,18 @@
 <?php
 
+require_once('Config.php');
+
 use Luracast\Restler\iAuthenticate;
 
 class SimpleAuth implements iAuthenticate
 {
-    const KEY = 'BzpABl9lchqzgHPZOwtvQsTWAZScmRpeKJfnWEzl2fyVtFNMEC';
+    public $config;
+
+	function __construct() {
+		$this->config = new JConfig();	
+	}
+
+
     function __isAllowed()
     {
     	
@@ -13,7 +21,7 @@ class SimpleAuth implements iAuthenticate
     	}
     
         if (isset($_GET['api_key'])) {
-        	return $_GET['api_key'] == SimpleAuth::KEY ? TRUE : FALSE;
+        	return $_GET['api_key'] == $this->config->SECRET_API_KEY ? TRUE : FALSE;
         }
     }
     private function key()

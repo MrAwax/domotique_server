@@ -1,8 +1,8 @@
 <?php
-require_once '../../../webprivate/restler3/vendor/restler.php';
-//require_once 'Session.php';
-use Luracast\Restler\Restler;
+require_once('Config.php');
+require_once($restlerLocation . '/restler.php');
 
+use Luracast\Restler\Restler;
 
 $r = new Restler();
 $r->addAPIClass('Sensors');
