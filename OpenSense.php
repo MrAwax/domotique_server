@@ -31,29 +31,33 @@ class OpenSense
 			$this->db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,
 				PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
-file_put_contents('apidev.log', $e->getMessage());
+			file_put_contents('/tmp/apidev.log', $e->getMessage(), FILE_APPEND);
             throw new RestException(500, 'MySQL: ' . $e->getMessage());
         }
 	}
 	
 	protected function post($device_id = 0, $feed_id = 0, $timetag = null, $value = null)
     {
-		file_put_contents('/tmp/apidev.log', print_r($_POST, true));
-		
-		if (!isset($this->opensense->feeds[$feed_id]))  {
-			throw new RestException(400, 'Unknown feed id ' . $feed_id);
-		}
+		file_put_contents('/tmp/apidev.log', print_r($_POST, true), FILE_APPEND);
+		//try {
+			if (!isset($this->opensense->feeds[$feed_id]))  {
+				throw new RestException(400, 'Unknown feed id ' . $feed_id);
+			}
 
-		$dateTime = mktime();
-		if (isset($timetag)) {
-			$dateTime = strtotime($timetag);
-		}		
-		
-		$feed = (object)$this->opensense->feeds[$feed_id];
-		
-		if ($feed->type == "field_event") {
-			$this->postFieldEvent($feed->field, $value, 'Open.Sen.se', $dateTime);
-		}
+			$dateTime = mktime();
+			if (isset($timetag)) {
+				$dateTime = strtotime($timetag);
+			}		
+			
+			$feed = (object)$this->opensense->feeds[$feed_id];
+			
+			if ($feed->type == "field_event") {
+				$this->postFieldEvent($feed->field, $value, 'Open.Sen.se', $dateTime);
+			}
+		/*} catch (Exception $e) {
+			file_put_contents('/tmp/apidev.log', $e->getMessage(), FILE_APPEND);
+            throw new RestException(500, 'MySQL: ' . $e->getMessage());
+        }*/
 	}
 		
 	private function postFieldEvent($field, $text, $author, $dateTime) {

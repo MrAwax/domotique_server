@@ -3,6 +3,7 @@
 require_once('Config.php');
 
 use PDO;
+use Luracast\Restler\RestException;
 
 class Sensors
 {
@@ -37,48 +38,86 @@ class Sensors
 		$id1 = substr($id, 0, $splitid);
 		$id2 = substr($id, $splitid+1);
 
-        $paris_time = new DateTimeZone('Europe/Paris');
-		$utc_time = new DateTimeZone('UTC');
-		$offset = $paris_time->getOffset(new DateTime());
 		
 		$this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);	
 		try {						
-			$stmt = $this->db->query("select concat(s.id1, '-', s.id2) as id, s.type, t.fields, t.default_field, s.name, (unix_timestamp(w.event) + $offset ) * 1000 as event, (unix_timestamp(w.old_event) + $offset ) * 1000  as old_event, w.temp, w.humi, w.battery, w.signal from current_weather as w, sondes as s, sensor_type as t where s.id1 = w.id1 and w.id2 = s.id2 and s.type = t.name and s.id1 = $id1 and s.id2 = $id2");
-			$ret = $stmt->fetchAll();
-			if (count($ret)>0) {
-				$ret = $this->parseSensor($ret);
-				return $ret[0];
+			$stmt = $this->db->query("select t.name, t.fields, t.table_name from sondes as s, sensor_type as t where s.type = t.name and s.id1 = $id1 and s.id2 = $id2");
+			$sensorDef = $stmt->fetchAll();
+			if (count($sensorDef)==0) {
+				throw new RestException(404, "Unknown sensor $id");
 			}
-			$stmt = $this->db->query("select concat(s.id1, '-', s.id2) as id, s.type, t.fields, t.default_field, s.name, (unix_timestamp(w.event) + $offset ) * 1000 as event, (unix_timestamp(w.old_event) + $offset ) * 1000 as old_event, w.power, w.total, w.battery, w.signal from current_power as w, sondes as s, sensor_type as t where s.id1 = w.id1 and w.id2 = s.id2 and s.type = t.name and s.id1 = $id1 and s.id2 = $id2");
+			$sensorDef = (object)$sensorDef[0];
+		
+			$query = $this->buildQuery(explode(",", $sensorDef->fields), $sensorDef->table_name);
+			$query .= " and c.id1 = $id1 and c.id2 = $id2";
+	
+		
+			$stmt = $this->db->query($query);
 			$ret = $stmt->fetchAll();
 			if (count($ret)>0) {				
 				$ret = $this->parseSensor($ret);
 				return $ret[0];
-			}						
-			
+			}
+			throw new RestException(404, "No data for sensor $id");			
 		} catch (Exception $e) {
 			throw new RestException(500, 'MySQL: ' . $e->getMessage());
 		}
     }
 	  
-	function index()
+	function index($sensorType = null)
     {	
-		$paris_time = new DateTimeZone('Europe/Paris');
-		$utc_time = new DateTimeZone('UTC');
-		$offset = $paris_time->getOffset(new DateTime());
-		
 		$this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);	
-		try {						
-			$stmt = $this->db->query("select concat(s.id1, '-', s.id2) as id, s.type, t.fields, t.default_field, s.name, (unix_timestamp(w.event) + $offset ) * 1000 as event, (unix_timestamp(w.old_event) + $offset ) * 1000  as old_event, w.temp, w.humi, w.battery, w.signal from current_weather as w, sondes as s, sensor_type as t where s.id1 = w.id1 and w.id2 = s.id2 and s.type = t.name");
-			$ret = $stmt->fetchAll();
-			$stmt = $this->db->query("select concat(s.id1, '-', s.id2) as id, s.type, t.fields, t.default_field, s.name, (unix_timestamp(w.event) + $offset ) * 1000 as event, (unix_timestamp(w.old_event) + $offset ) * 1000 as old_event, w.power, w.total, w.battery, w.signal from current_power as w, sondes as s, sensor_type as t where s.id1 = w.id1 and w.id2 = s.id2 and s.type = t.name");
-			$ret = array_merge($ret, $stmt->fetchAll());
-									
-			return $this->parseSensor($ret);
+		try {
+			$clause = '';
+			if (isset($sensorType)) {
+				$clause = " where name = '$sensorType'";
+			}
+			$stmt = $this->db->query("select name, default_field, fields, table_name from sensor_type" . $clause);
+			$sensorTypes = $stmt->fetchAll();
+			// var_dump($sensorTypes);
+			
+			$ret = array();
+			$types = array();
+			foreach($sensorTypes as $itType) {
+				$itType = (object)$itType;
+				$types[] = $itType->name;
+				// var_dump($itType);
+				
+				$fields = explode(",", $itType->fields);
+				
+				$query = $this->buildQuery($fields, $itType->table_name);
+				// echo $query ."\n";
+				
+				$stmt = $this->db->query($query);
+				$ret = array_merge($ret, $stmt->fetchAll());
+			}									
+			$sensors = $this->parseSensor($ret);
+			$output["types"] = $types;
+			$output["count"] = count($sensors);
+			$output["sensors"] = $sensors;
+			
+			return $output;
 		} catch (Exception $e) {
 			throw new RestException(500, 'MySQL: ' . $e->getMessage());
 		}
     }
+
+	private function buildQuery($fields, $table_name) {
+		$paris_time = new DateTimeZone('Europe/Paris');
+		$utc_time = new DateTimeZone('UTC');
+		$offset = $paris_time->getOffset(new DateTime());
+		
+		$query = "select concat(s.id1, '-', s.id2) as id, s.type, t.fields, t.default_field, s.name, ";
+		$query .= "(unix_timestamp(c.event) + $offset ) * 1000 as event, (unix_timestamp(c.old_event) + $offset ) * 1000 as old_event, ";
+		foreach($fields as $field) {
+			$query .= 'c.' . $field . ", ";
+		}
+		$query .= "c.battery, c.signal ";
+		$query .= "from current_" . $table_name . " as c, sondes as s, sensor_type as t ";
+		$query .= "where s.id1 = c.id1 and c.id2 = s.id2 and s.type = t.name";
+		
+		return $query;
+	}
 	
 	private function parseSensor($sensors)
 	{
